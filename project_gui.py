@@ -1,10 +1,14 @@
 import tkinter as tk
 from tkinter import messagebox
 from project import Project
+from dynamodb import dynamodb_controller
+import uuid
+
 
 class ProjectManagerGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.client = dynamodb_controller()
         self.title("Project Management Tool (Group 11)")
         self.geometry("800x600")
 
@@ -32,46 +36,54 @@ class ProjectManagerGUI(tk.Tk):
 
     def update_project_list(self):
         self.project_list.delete(0, tk.END)
-        for project in self.projects:
-            self.project_list.insert(tk.END, f"{project.name} - {project.description} - {project.progress}%")
+        self.projects.clear()
+        response = self.client.scan_table()
+        for rstr in response:
+            self.projects.append(Project(rstr['id'], rstr['name'], rstr['description'], rstr['progress'], rstr['dueDate']))
+            self.project_list.insert(tk.END, f"{rstr['name']} - {rstr['description']} - {rstr['progress']}% - {rstr['dueDate']}")
 
     def add_project(self):
         project_details = self.get_project_details()
         if project_details:
-            name, description, progress = project_details
-            self.projects.append(Project(name, description, progress))
+            uid, name, description, progress, dueDate = project_details
+            self.client.save_plan(uid, name, description, progress, dueDate)
+            self.projects.append(Project(uid, name, description, progress, dueDate))
             self.update_project_list()
 
     def edit_project(self):
         selected_index = self.project_list.curselection()
         if not selected_index:
-            messagebox.showerror("Error!")
+            messagebox.showerror("You haven't select a project!")
             return
-
         project = self.projects[selected_index[0]]
         updated_project_details = self.get_project_details(project)
         if updated_project_details:
-            name, description, progress = updated_project_details
-            project.update(name, description, progress)
+            uid, name, description, progress, dueDate = updated_project_details
+            self.client.edit_plan(uid, name, description, progress, dueDate)
+            project.update(uid, name, description, progress, dueDate)
+
             self.update_project_list()
 
     def delete_project(self):
         selected_index = self.project_list.curselection()
         if not selected_index:
-            messagebox.showerror("Error!")
+            messagebox.showerror("You haven't select a project!!")
             return
-
+        uid = self.projects[selected_index[0]].uid
+        self.client.delete_plan(uid)
         self.projects.pop(selected_index[0])
         self.update_project_list()
 
     def get_project_details(self, project=None):
-        dialog = ProjectDialog(self, project)
+        dialog = ProjectDialog(self, project, self.client)
         self.wait_window(dialog)
         return dialog.result
 
+
 class ProjectDialog(tk.Toplevel):
-    def __init__(self, parent, project=None):
+    def __init__(self, parent, project=None, client=None):
         super().__init__(parent)
+        self.client = client
         self.title("Project Detail")
         self.geometry("400x300")
 
@@ -80,9 +92,13 @@ class ProjectDialog(tk.Toplevel):
         self.create_widgets()
 
         if project:
+            self.uid = project.uid
             self.name_var.set(project.name)
             self.description_var.set(project.description)
             self.progress_var.set(project.progress)
+            self.due_date_var.set(project.dueDate)
+        else:
+            self.uid = uuid.uuid4()
 
     def create_widgets(self):
         # 项目名称
@@ -100,24 +116,28 @@ class ProjectDialog(tk.Toplevel):
         self.progress_var = tk.IntVar()
         tk.Entry(self, textvariable=self.progress_var).grid(row=2, column=1, padx=10, pady=10)
 
+        # 截止日期
+        tk.Label(self, text="Due Date：").grid(row=3, column=0, padx=10, pady=10, sticky="w")
+        self.due_date_var = tk.StringVar()
+        tk.Entry(self, textvariable=self.due_date_var).grid(row=3, column=1, padx=10, pady=10)
+
         # 操作按钮
         self.save_button = tk.Button(self, text="Save", command=self.save_project)
-        self.save_button.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+        self.save_button.grid(row=4, column=1, padx=10, pady=10, sticky="w")
 
         self.cancel_button = tk.Button(self, text="Cancel", command=self.cancel)
-        self.cancel_button.grid(row=3, column=1, padx=10, pady=10, sticky="e")
+        self.cancel_button.grid(row=4, column=1, padx=10, pady=10, sticky="e")
 
     def save_project(self):
         name = self.name_var.get()
         description = self.description_var.get()
         progress = self.progress_var.get()
-
+        dueDate = self.due_date_var.get()
         if not name or not description or progress < 0 or progress > 100:
-            messagebox.showerror("Error!")
+            messagebox.showerror("Please check you input!")
             return
+        self.result = (self.uid, name, description, progress, dueDate)
 
-        self.result = (name, description, progress)
         self.destroy()
-
     def cancel(self):
         self.destroy()
