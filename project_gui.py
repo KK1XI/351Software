@@ -61,6 +61,7 @@ class ProjectManagerGUI(tk.Tk):
             uid, name, description, progress, dueDate = updated_project_details
             self.client.edit_plan(uid, name, description, progress, dueDate)
             project.update(uid, name, description, progress, dueDate)
+
             self.update_project_list()
 
     def delete_project(self):
@@ -136,7 +137,7 @@ class ProjectDialog(tk.Toplevel):
             messagebox.showerror("Please check you input!")
             return
         self.result = (self.uid, name, description, progress, dueDate)
-        self.destroy()
 
+        self.destroy()
     def cancel(self):
         self.destroy()
